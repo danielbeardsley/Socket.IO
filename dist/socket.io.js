@@ -101,6 +101,15 @@
     return socket.of(uri.path.length > 1 ? uri.path : '');
   };
 
+  /**
+   * Utility to get unix epoch time.  Used mainly to generate a t=# url parameter.
+   *
+   * @api private
+   */
+  io.time = function(){
+    return +new Date();
+  }
+
 })('object' === typeof module ? module.exports : (this.io = {}), this);
 
 /**
@@ -1598,7 +1607,7 @@
         , options.host + ':' + options.port
         , options.resource
         , io.protocol
-        , io.util.query(this.options.query, 't=' + +new Date)
+        , io.util.query(this.options.query, 't=' + io.time())
       ].join('/');
 
     if (this.isXDomain() && !io.util.ua.hasCORS) {
@@ -1903,15 +1912,13 @@
   };
 
   /**
-   * Called upon reconnection.
+   * Called to initiate reconnection.
    *
-   * @api private
+   * @api public
    */
 
-  Socket.prototype.reconnect = function () {
+  Socket.prototype.reconnect = function (immediately) {
     this.reconnecting = true;
-    this.reconnectionAttempts = 0;
-    this.reconnectionDelay = this.options['reconnection delay'];
 
     var self = this
       , maxAttempts = this.options['max reconnection attempts']
@@ -1930,13 +1937,13 @@
 
       self.removeListener('connect_failed', maybeReconnect);
       self.removeListener('connect', maybeReconnect);
-
       self.reconnecting = false;
 
       delete self.reconnectionAttempts;
       delete self.reconnectionDelay;
       delete self.reconnectionTimer;
       delete self.redoTransports;
+      delete self.reconnect;
 
       self.options['try multiple transports'] = tryMultiple;
     };
@@ -1971,15 +1978,32 @@
         }
 
         self.connect();
-        self.publish('reconnecting', self.reconnectionDelay, self.reconnectionAttempts);
-        self.reconnectionTimer = setTimeout(maybeReconnect, self.reconnectionDelay);
+        resetTimer();
       }
     };
 
+    // Temporarily override this function so that
+    // further calls try an immediate reconnection
+    this.reconnect = restartReconnectionProcess;
+    restartReconnectionProcess(immediately);
     this.options['try multiple transports'] = false;
-    this.reconnectionTimer = setTimeout(maybeReconnect, this.reconnectionDelay);
-
     this.on('connect', maybeReconnect);
+
+    function restartReconnectionProcess(immediately_){
+      self.reconnectionAttempts = 0;
+      self.reconnectionDelay = self.options['reconnection delay'];
+      resetTimer(immediately_);
+    }
+
+    function resetTimer(immediately){
+      var delay = immediately ? 0 : self.reconnectionDelay;
+
+      clearTimeout(this.reconnectionTimer);
+      self.reconnectionTimer = setTimeout(maybeReconnect, delay);
+
+      if (!immediately)
+        self.publish('reconnecting', delay, self.reconnectionAttempts);
+    }
   };
 
 })(
@@ -3104,7 +3128,7 @@ var swfobject=function(){var D="undefined",r="object",S="Shockwave Flash",W="Sho
 
   XHR.prototype.request = function (method) {
     var req = io.util.request(this.socket.isXDomain())
-      , query = io.util.query(this.socket.options.query, 't=' + +new Date);
+      , query = io.util.query(this.socket.options.query, 't=' + io.time());
 
     req.open(method || 'GET', this.prepareUrl() + query, true);
 
@@ -3234,7 +3258,7 @@ var swfobject=function(){var D="undefined",r="object",S="Shockwave Flash",W="Sho
     iframeC.appendChild(this.iframe);
 
     var self = this
-      , query = io.util.query(this.socket.options.query, 't='+ +new Date);
+      , query = io.util.query(this.socket.options.query, 't=' + io.time());
 
     this.iframe.src = this.prepareUrl() + query;
 
@@ -3569,7 +3593,7 @@ var swfobject=function(){var D="undefined",r="object",S="Shockwave Flash",W="Sho
     var self = this
       , query = io.util.query(
              this.socket.options.query
-          , 't='+ (+new Date) + '&i=' + this.index
+          , 't='+ io.time() + '&i=' + this.index
         );
 
     if (!this.form) {
@@ -3654,7 +3678,7 @@ var swfobject=function(){var D="undefined",r="object",S="Shockwave Flash",W="Sho
       , script = document.createElement('script')
       , query = io.util.query(
              this.socket.options.query
-          , 't='+ (+new Date) + '&i=' + this.index
+          , 't=' + io.time() + '&i=' + this.index
         );
 
     if (this.script) {
